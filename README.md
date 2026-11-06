@@ -1,6 +1,6 @@
 # Workbench Agent: LLM-driven action agent (CS4680 AI Agent Project)
 
-A web agent that sends natural-language requests to an LLM (any OpenAI-compatible API; it runs on the **free** Google Gemini or Groq tiers, so no paid credits are needed), parses the model's JSON plan, validates it, asks for confirmation on risky steps, executes real actions, and logs everything.
+A web agent that sends natural-language requests to an LLM (any OpenAI-compatible API; it runs on the **free** Google Gemini or Groq tiers), parses the model's JSON plan, validates it, asks for confirmation on risky steps, executes real actions, and logs everything.
 
 ## Problem and relevance
 Routine chores (making notes, tracking tasks, tidying files, checking a public API) mean clicking through several apps. LLMs understand plain English but can't act on their own, and letting them act unchecked is risky. This agent closes the gap: the model *proposes* a structured plan, and deterministic code *validates, confirms and executes* it. That trust boundary (LLM output is untrusted input) is the core idea behind real-world agents.
