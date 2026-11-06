@@ -37,6 +37,11 @@ nav button{flex:1;border:0;border-radius:0;background:none;padding:12px;color:va
 nav button[aria-selected=true]{color:var(--ink);border-bottom-color:var(--accent);font-weight:500}
 #side{flex:1;overflow-y:auto;padding:14px;font-size:13px}#side div{padding:3px 0;word-break:break-word}
 .e{color:var(--mute);padding:8px 0}
+.fl{display:flex;justify-content:space-between;gap:8px;align-items:center}
+.lnk{background:none;border:0;padding:0;color:var(--accent);cursor:pointer;font:inherit;text-align:left;word-break:break-all}
+.lnk:hover{text-decoration:underline}
+a.dl{color:var(--mute);text-decoration:none;border:1px solid var(--line);border-radius:5px;padding:0 7px;font-size:12px;flex:none}
+a.dl:hover{color:var(--ink)}
 @media(max-width:800px){body{grid-template-columns:1fr;grid-template-rows:minmax(0,1fr) 190px}aside{border-left:0;border-top:1px solid var(--line)}}
 </style></head>
 <body>
@@ -92,12 +97,24 @@ async function refresh(){
   st=await fetch("/api/state?sid="+sid).then(r=>r.json());
   $("#mode").textContent=st.mock?"Mock mode: no API key set on the server":"Live · "+st.model; drawSide();
 }
+async function viewFile(p){
+  const r=await fetch("/api/file?sid="+sid+"&path="+encodeURIComponent(p)).then(r=>r.json());
+  const card=add(el("div","msg bot")); card.append(el("div","mono",p));
+  card.append(el("pre","",r.status=="ok"?(r.content||"(empty file)"):r.error)); card.scrollIntoView({block:"end"}); refresh();
+}
+function fileRow(p){
+  if(p.endsWith("/"))return el("div","mono",p);
+  const row=el("div","fl"), b=el("button","lnk mono",p); b.title="Show contents in the chat"; b.onclick=()=>viewFile(p);
+  const a=el("a","dl","download"); a.href="/api/download?sid="+sid+"&path="+encodeURIComponent(p); a.setAttribute("download",p.split("/").pop());
+  row.append(b,a); return row;
+}
 function drawSide(){
   const s=$("#side");s.replaceChildren();
   document.querySelectorAll("nav button").forEach(b=>b.setAttribute("aria-selected",b.dataset.t==tab));
   const rows=tab=="files"?st.files.map(f=>[f]):tab=="tasks"?st.tasks.map(t=>[(t.done?"☑ ":"☐ ")+"#"+t.id+" "+t.title]):[...st.log].reverse().map(l=>[l.ts.slice(11,19)+" "+l.event+" "+(l.tool||l.message||l.error||"")+(l.ok===false?" (failed)":"")]);
-  if(!rows.length)s.append(el("div","e",tab=="files"?"No files yet. Ask the agent to create one.":tab=="tasks"?"No tasks yet.":"Every action will be logged here."));
-  rows.forEach(r=>s.append(el("div","mono",r[0])));
+  if(!rows.length)s.append(el("div","e",tab=="files"?"No files yet. Ask the agent to create one.":tab=="tasks"?"No tasks yet. Try: add task: finish project":"Every action will be logged here."));
+  if(tab=="files")rows.forEach(r=>s.append(fileRow(r[0])));
+  else rows.forEach(r=>s.append(el("div","mono",r[0])));
 }
 document.querySelectorAll("nav button").forEach(b=>b.onclick=()=>{tab=b.dataset.t;drawSide()});
 ["create todo.txt with buy milk and eggs","add task: finish prompt engineering project","list my files","delete todo.txt","what time is it?","read ../../etc/passwd"].forEach(t=>{

@@ -1,7 +1,7 @@
 """Flask web server: chat endpoint, confirmation flow, state/audit endpoints."""
 import collections, os, time, uuid
 from werkzeug.exceptions import HTTPException
-from flask import Flask, jsonify, render_template, request
+from flask import Flask, jsonify, render_template, request, send_file
 import agent
 
 app = Flask(__name__)
@@ -86,6 +86,34 @@ def state():
     ws, err = workspace(request.args.get("sid"))
     if err: return err
     return jsonify(files=ws.tree(), tasks=ws.tasks(), log=ws.recent_log(), mock=llm.mock, model=llm.model)
+
+
+def sandbox_file():
+    """Resolve ?sid=&path= to a file inside that session's sandbox (same path checks the agent tools use)."""
+    ws, err = workspace(request.args.get("sid"))
+    if err: return None, None, err
+    try: return ws, agent._file(ws, request.args.get("path", "")), None
+    except agent.SafetyError as e: return None, None, (jsonify(status="error", error=str(e)), 400)
+    except OSError as e: return None, None, (jsonify(status="error", error=str(e)), 404)
+
+
+@app.get("/api/file")
+def file_view():
+    ws, f, err = sandbox_file()
+    if err: return err
+    if f.stat().st_size > agent.MAX_BYTES: return jsonify(status="error", error="File too large to preview. Use download."), 413
+    ws.log("viewed", message=request.args["path"])
+    return jsonify(status="ok", path=request.args["path"], content=f.read_text(errors="replace"))
+
+
+@app.get("/api/download")
+def file_download():
+    ws, f, err = sandbox_file()
+    if err: return err
+    ws.log("downloaded", message=request.args["path"])
+    r = send_file(f, as_attachment=True, download_name=f.name, mimetype="text/plain")  # plain text + nosniff: never rendered as a page
+    r.headers["X-Content-Type-Options"] = "nosniff"
+    return r
 
 
 if __name__ == "__main__":
