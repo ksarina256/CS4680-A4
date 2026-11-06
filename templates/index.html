@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Workbench Agent</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#eef1f4;--panel:#fff;--ink:#1b2430;--mute:#5d6b7a;--line:#d3dae1;--accent:#1f5f8b;--ok:#2e7d4f;--warn:#a85208;--bad:#b3261e;--warnbg:#fdf1e3}
+@media(prefers-color-scheme:dark){:root{--bg:#12171d;--panel:#1b222a;--ink:#e6ebf0;--mute:#9aa8b6;--line:#2c3743;--accent:#6bb0e0;--ok:#6fcf97;--warn:#f0a05a;--bad:#ff8a80;--warnbg:#2e2113}}
+*{box-sizing:border-box}html,body{height:100%;margin:0}
+body{font:15px/1.5 "IBM Plex Sans",system-ui,sans-serif;background:var(--bg);color:var(--ink);display:grid;grid-template-columns:1fr 340px;grid-template-rows:minmax(0,1fr);height:100vh;height:100dvh}
+.mono,pre,code{font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:13px}
+main{display:flex;flex-direction:column;min-width:0;min-height:0}
+header{padding:14px 20px;border-bottom:1px solid var(--line);display:flex;align-items:baseline;gap:12px}
+h1{font-size:17px;margin:0;font-weight:600}header span{color:var(--mute);font-size:13px}
+#log{flex:1;overflow-y:auto;padding:20px;display:flex;flex-direction:column;gap:14px}
+.msg{max-width:720px}.me{align-self:flex-end;background:var(--accent);color:#fff;padding:8px 14px;border-radius:14px 14px 2px 14px}
+@media(prefers-color-scheme:dark){.me{color:#0c1218}}
+.bot{background:var(--panel);border:1px solid var(--line);border-radius:2px 14px 14px 14px;padding:12px 14px}
+.bot .why{color:var(--mute);font-size:13px;margin:0 0 8px}
+.act{border-left:3px solid var(--line);padding:4px 0 4px 10px;margin:6px 0}
+.act.ok{border-color:var(--ok)}.act.fail{border-color:var(--bad)}.act.ask{border-color:var(--warn)}
+.act pre{margin:4px 0 0;white-space:pre-wrap;word-break:break-word;color:var(--mute)}
+.tag{font-size:12px;padding:1px 7px;border-radius:9px;border:1px solid var(--line);color:var(--mute);margin-left:6px}
+.tag.high{color:var(--bad);border-color:var(--bad)}.tag.medium{color:var(--warn);border-color:var(--warn)}
+.confirm{background:var(--warnbg);border:1px solid var(--warn);border-radius:8px;padding:10px 12px;margin-top:10px}
+button{font:inherit;border:1px solid var(--line);background:var(--panel);color:var(--ink);padding:6px 14px;border-radius:6px;cursor:pointer}
+button.go{background:var(--accent);border-color:var(--accent);color:#fff}button.stop{border-color:var(--bad);color:var(--bad)}
+@media(prefers-color-scheme:dark){button.go{color:#0c1218}}
+button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.err{color:var(--bad)}
+#chips{padding:0 20px 8px;display:flex;gap:8px;overflow-x:auto;scrollbar-width:thin}#chips button{font-size:13px;color:var(--mute);white-space:nowrap;flex:none}
+form{display:flex;gap:10px;padding:12px 20px 18px;border-top:1px solid var(--line)}
+input{flex:1;font:inherit;padding:10px 12px;border:1px solid var(--line);border-radius:6px;background:var(--panel);color:var(--ink)}
+aside{border-left:1px solid var(--line);background:var(--panel);display:flex;flex-direction:column;min-width:0;min-height:0}
+nav{display:flex;border-bottom:1px solid var(--line)}
+nav button{flex:1;border:0;border-radius:0;background:none;padding:12px;color:var(--mute);border-bottom:2px solid transparent}
+nav button[aria-selected=true]{color:var(--ink);border-bottom-color:var(--accent);font-weight:500}
+#side{flex:1;overflow-y:auto;padding:14px;font-size:13px}#side div{padding:3px 0;word-break:break-word}
+.e{color:var(--mute);padding:8px 0}
+@media(max-width:800px){body{grid-template-columns:1fr;grid-template-rows:minmax(0,1fr) 190px}aside{border-left:0;border-top:1px solid var(--line)}}
+</style></head>
+<body>
+<main>
+ <header><h1>Workbench Agent</h1><span id="mode">connecting…</span></header>
+ <div id="log" aria-live="polite"></div>
+ <div id="chips"></div>
+ <form id="f"><input id="q" placeholder="Ask in plain English, e.g. “create todo.txt with buy milk”" autocomplete="off" aria-label="Request" maxlength="1000"><button class="go" id="send">Run</button></form>
+</main>
+<aside>
+ <nav role="tablist"><button role="tab" data-t="files">Files</button><button role="tab" data-t="tasks">Tasks</button><button role="tab" data-t="log">Audit log</button></nav>
+ <div id="side"></div>
+</aside>
+<script>
+const newId=()=>[...crypto.getRandomValues(new Uint8Array(12))].map(b=>b.toString(16).padStart(2,"0")).join("");
+const sid=(()=>{try{return localStorage.sid||(localStorage.sid=newId())}catch{return newId()}})(); // still works if storage is blocked
+const $=s=>document.querySelector(s), log=$("#log"); let tab="files", st={};
+const el=(t,c,x)=>{const e=document.createElement(t);if(c)e.className=c;if(x!=null)e.textContent=x;return e};
+const post=(u,b)=>fetch(u,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({sid,...b})}).then(r=>r.json());
+const add=n=>{log.append(n);log.scrollTop=log.scrollHeight;return n};
+const fmt=a=>a.tool+"("+Object.entries(a.args).map(([k,v])=>k+"="+JSON.stringify(v.length>40?v.slice(0,40)+"…":v)).join(", ")+")";
+
+function actRow(a,res){
+  const d=el("div","act "+(res?(res.ok?"ok":"fail"):a.confirm?"ask":""));
+  const h=el("div","mono",fmt(a)); if(a.risk!="low")h.append(el("span","tag "+a.risk,a.risk+" risk")); d.append(h);
+  if(res)d.append(el("pre","",res.output)); else if(a.confirm)d.append(el("div","",a.why));
+  return d;
+}
+function render(r,card){
+  card=card||add(el("div","msg bot")); card.replaceChildren();
+  if(r.status=="error"){card.append(el("div","err",r.error));card.scrollIntoView({block:"end"});return refresh()}
+  if(r.plan&&r.plan.reasoning)card.append(el("p","why",r.plan.reasoning));
+  (r.plan?r.plan.actions:[]).forEach((a,i)=>card.append(actRow(a,r.results&&r.results[i])));
+  if(r.reply)card.append(el("div","",r.reply));
+  if(r.status=="failed")card.append(el("div","err","Stopped: a step failed, so the remaining steps were not run."));
+  if(r.status=="needs_confirmation"){
+    const c=el("div","confirm"); c.append(el("div","","This plan changes or removes data. Run it?"));
+    const row=el("div"); row.style.cssText="display:flex;gap:8px;margin-top:8px";
+    const go=el("button","go","Approve and run"), no=el("button","stop","Cancel");
+    [go,no].forEach(b=>b.onclick=async()=>{go.disabled=no.disabled=true;render(await post("/api/confirm",{plan_id:r.plan_id,approve:b==go}),card)});
+    row.append(go,no);c.append(row);card.append(c);
+  }
+  card.scrollIntoView({block:"end"});refresh();
+}
+$("#f").onsubmit=async e=>{
+  e.preventDefault();const m=$("#q").value.trim();if(!m)return;
+  add(el("div","msg me",m));$("#q").value="";$("#send").disabled=true;
+  const card=add(el("div","msg bot","Planning…"));
+  try{render(await post("/api/chat",{message:m}),card)}catch{render({status:"error",error:"Could not reach the server. Check your connection and try again."},card)}
+  $("#send").disabled=false;$("#q").focus();
+};
+async function refresh(){
+  st=await fetch("/api/state?sid="+sid).then(r=>r.json());
+  $("#mode").textContent=st.mock?"Mock mode: no API key set on the server":"Live · "+st.model; drawSide();
+}
+function drawSide(){
+  const s=$("#side");s.replaceChildren();
+  document.querySelectorAll("nav button").forEach(b=>b.setAttribute("aria-selected",b.dataset.t==tab));
+  const rows=tab=="files"?st.files.map(f=>[f]):tab=="tasks"?st.tasks.map(t=>[(t.done?"☑ ":"☐ ")+"#"+t.id+" "+t.title]):[...st.log].reverse().map(l=>[l.ts.slice(11,19)+" "+l.event+" "+(l.tool||l.message||l.error||"")+(l.ok===false?" (failed)":"")]);
+  if(!rows.length)s.append(el("div","e",tab=="files"?"No files yet. Ask the agent to create one.":tab=="tasks"?"No tasks yet.":"Every action will be logged here."));
+  rows.forEach(r=>s.append(el("div","mono",r[0])));
+}
+document.querySelectorAll("nav button").forEach(b=>b.onclick=()=>{tab=b.dataset.t;drawSide()});
+["create todo.txt with buy milk and eggs","add task: finish prompt engineering project","list my files","delete todo.txt","what time is it?","read ../../etc/passwd"].forEach(t=>{
+  const b=el("button","",t);b.type="button";b.onclick=()=>{$("#q").value=t;$("#q").focus()};$("#chips").append(b)});
+add(el("div","msg bot","Tell me what to do with your files, tasks, allow-listed web APIs or system info. Anything that deletes or overwrites data waits for your approval."));
+refresh();
+</script></body></html>
